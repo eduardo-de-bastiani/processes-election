@@ -60,20 +60,23 @@ func ElectionStage(TaskId int, in chan mensagem, out chan mensagem, leader int) 
 			continue   // continua no loop
 
 		case 0: // Mensagem de eleição
-
-		msg.corpo[TaskId] = TaskId
-		// Se a mensagem voltou ao processo que iniciou a eleição
-		if msg.corpo[TaskId] == TaskId {
-			// Determina o novo líder (o menor PID)
-			newLeader := TaskId
-			for _, pid := range msg.corpo {
-				if pid < newLeader {
-					newLeader = pid
-				}
+			if !bFailed{
+				msg.corpo[TaskId] = TaskId
 			}
+			// Se a mensagem voltou ao processo que iniciou a eleição
+			if msg.corpo[TaskId] == TaskId {
+				// Determina o novo líder (o menor PID)
+				// se a mensagem chegou no processo que falhou, ele não pode ser líder e deve ser ignorado
+
+				newLeader := TaskId
+				for _, pid := range msg.corpo {
+					if pid < newLeader {
+						newLeader = pid
+					}
+				}
 			msg.tipo = 1 // Tipo de mensagem de coordenador
 			msg.lider = newLeader
-			fmt.Printf("%2d: sou o líder %d\n", TaskId, newLeader)
+			
 		}
 			// Repassa a mensagem para o próximo processo
 			out <- msg
