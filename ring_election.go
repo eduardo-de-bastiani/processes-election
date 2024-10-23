@@ -24,19 +24,21 @@ func ElectionControler(in chan int) {
 	fmt.Printf("Controle: mudar o processo 0 para falho\n")
 	fmt.Printf("Controle: confirmação %d\n", <-in) // receber e imprimir confirmação
 	// Mudar o processo 1 para falho
-	temp.tipo = 2
-	chans[0] <- temp
-	fmt.Printf("Controle: mudar o processo 1 para falho\n")
-	fmt.Printf("Controle: confirmação %d\n", <-in) // receber e imprimir confirmação
-	fmt.Println("\n Processo controlador concluído\n")
+	// temp.tipo = 2
+	// chans[0] <- temp
+	// fmt.Printf("Controle: mudar o processo 1 para falho\n")
+	// fmt.Printf("Controle: confirmação %d\n", <-in) // receber e imprimir confirmação
+	// fmt.Println("\n Processo controlador concluído\n")
 }
 
-func ElectionStage(TaskId int, in chan mensagem, out chan mensagem, leader int) {
+func ElectionStage(TaskId int, in chan mensagem, out chan mensagem, leader int, control chan int, initiator int) {
 	defer wg.Done()
 
 	var actualLeader int
     var bFailed bool = false
 	actualLeader = leader
+	localInitiator := initiator // Keep track of initiator locally
+    actualLeader = leader
 
 	for {
 		msg := <-in // Recebe a mensagem do processo anterior
@@ -48,49 +50,65 @@ func ElectionStage(TaskId int, in chan mensagem, out chan mensagem, leader int) 
 		switch msg.tipo {
 		case 2: // Processo falhou
 			bFailed = true
-			fmt.Printf("%2d: falho %v \n", TaskId, bFailed)
+			fmt.Printf("%2d: processo líder %d falho\n", TaskId, leader)
 			// Aqui, o processo anterior deve iniciar a eleição
+			// Iniciar eleição
+            newMsg := mensagem{
+                tipo: 0,
+                corpo: TaskId,
+                lider: -1,
+            }
 			// Enviar mensagem de eleição
-			msg.tipo = 0 // Tipo de mensagem de eleição
-			msg.corpo = TaskId
-			//println("Teste lider depois da falha: ", msg.lider)
-			out <- msg // repassa a mensagem para o próximo processo
-			continue   // continua no loop
+			control <- TaskId
+			localInitiator = TaskId // Set this process as initiator
+            out <- newMsg
+            continue
 
 		case 0: // Mensagem de eleição
-			if !bFailed{
+			if bFailed{
 				out <- msg
-			}
-			// Se a mensagem voltou ao processo que iniciou a eleição
-			if msg.corpo == TaskId {
-				msg.tipo = 1 
-				msg.lider = TaskId
-				fmt.Printf("%2d: sou o novo líder\n", TaskId)
-				out <- msg	//precisa? 
 				continue
 			}
-			
-			if TaskId < msg.corpo{
-				msg.corpo = TaskId
+			if localInitiator == TaskId {
+                // Transformar em mensagem de líder
+                newMsg := mensagem{
+                    tipo: 1,
+                    corpo: TaskId,
+                    lider: msg.corpo, // O líder será o processo com menor ID
+                }
+				localInitiator = -1 // Reset initiator
+				out <- newMsg
+                continue
+
+            }
+
+			if localInitiator == -1 {
+				localInitiator = msg.corpo // Guarda quem iniciou a eleição
+				fmt.Printf("%2d: Registrando initiator como %d\n", TaskId, localInitiator)
 			}
-			// Repassa a mensagem para o próximo processo
-            out <- msg
-            continue // continua no loop
+
+			// Compara IDs e atualiza o corpo se necessário
+			if TaskId < msg.corpo {
+				msg.corpo = TaskId
+				fmt.Printf("%2d: Atualizando corpo para %d\n", TaskId, TaskId)
+			}
+
+
+			out <- msg
 
 		case 1: // mensagem de coordenador
 			bFailed = false
 			actualLeader = msg.lider
 			fmt.Printf("%2d: novo líder é %d\n", TaskId, actualLeader)
 
-			// Atualiza seu líder e repassa para os outros processos
-			fmt.Printf("%2d: atualizando líder para %d\n", TaskId, actualLeader)
-			msg.lider = actualLeader
-			// Repassa a mensagem para o próximo processo no anel
-			if msg.corpo != TaskId {
-				out <- msg
-			}
-			break // sai do loop após atualizar e repassar
 
+			 // Repassa a mensagem se não completou o ciclo
+			 if msg.corpo == TaskId {
+                fmt.Printf("%2d: eleição concluída\n", TaskId)
+                return // Encerra o processo
+            }
+
+			out <- msg
 		default:
 			fmt.Printf("%2d: não conheço este tipo de mensagem\n", TaskId)
 		}
@@ -111,7 +129,7 @@ func main() {
 
 	for i:= 0; i < 4; i++{
 		wg.Add(1)
-		go ElectionStage(i, chans[i], chans[(i+1)%4], 0)
+		go ElectionStage(i, chans[i], chans[(i+1)%4], 0, in, -1)
 	}
 
 	wg.Wait()
