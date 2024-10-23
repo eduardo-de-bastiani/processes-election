@@ -3,14 +3,13 @@ package main
 import (
 	"fmt"
 	"sync"
-	"time"
 )
 
 var wg sync.WaitGroup
 
 type mensagem struct {
 	tipo  int    // 0: eleição, 1: coordenador
-	corpo [4]int // conteúdo da mensagem para colocar os ids (usar um tamanho compatível com o número de processos no anel)
+	corpo int // conteúdo da mensagem para colocar os ids (usar um tamanho compatível com o número de processos no anel)
 	lider int    // PID do processo que será o coordenador
 }
 
@@ -24,7 +23,6 @@ func ElectionControler(in chan int) {
 	chans[3] <- temp
 	fmt.Printf("Controle: mudar o processo 0 para falho\n")
 	fmt.Printf("Controle: confirmação %d\n", <-in) // receber e imprimir confirmação
-	time.Sleep(2 * time.Second)
 	// Mudar o processo 1 para falho
 	temp.tipo = 2
 	chans[0] <- temp
@@ -54,33 +52,30 @@ func ElectionStage(TaskId int, in chan mensagem, out chan mensagem, leader int) 
 			// Aqui, o processo anterior deve iniciar a eleição
 			// Enviar mensagem de eleição
 			msg.tipo = 0 // Tipo de mensagem de eleição
-			msg.corpo[TaskId] = TaskId
+			msg.corpo = TaskId
 			//println("Teste lider depois da falha: ", msg.lider)
 			out <- msg // repassa a mensagem para o próximo processo
 			continue   // continua no loop
 
 		case 0: // Mensagem de eleição
 			if !bFailed{
-				msg.corpo[TaskId] = TaskId
+				out <- msg
 			}
 			// Se a mensagem voltou ao processo que iniciou a eleição
-			if msg.corpo[TaskId] == TaskId {
-				// Determina o novo líder (o menor PID)
-				// se a mensagem chegou no processo que falhou, ele não pode ser líder e deve ser ignorado
-
-				newLeader := TaskId
-				for _, pid := range msg.corpo {
-					if pid < newLeader {
-						newLeader = pid
-					}
-				}
-			msg.tipo = 1 // Tipo de mensagem de coordenador
-			msg.lider = newLeader
+			if msg.corpo == TaskId {
+				msg.tipo = 1 
+				msg.lider = TaskId
+				fmt.Printf("%2d: sou o novo líder\n", TaskId)
+				out <- msg	//precisa? 
+				continue
+			}
 			
-		}
+			if TaskId < msg.corpo{
+				msg.corpo = TaskId
+			}
 			// Repassa a mensagem para o próximo processo
-			out <- msg
-			continue // continua no loop
+            out <- msg
+            continue // continua no loop
 
 		case 1: // mensagem de coordenador
 			bFailed = false
@@ -91,7 +86,7 @@ func ElectionStage(TaskId int, in chan mensagem, out chan mensagem, leader int) 
 			fmt.Printf("%2d: atualizando líder para %d\n", TaskId, actualLeader)
 			msg.lider = actualLeader
 			// Repassa a mensagem para o próximo processo no anel
-			if msg.corpo[TaskId] != TaskId {
+			if msg.corpo != TaskId {
 				out <- msg
 			}
 			break // sai do loop após atualizar e repassar
