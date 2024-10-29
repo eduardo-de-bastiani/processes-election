@@ -11,6 +11,7 @@ import (
 type mensagem struct {
 	tipo  int    // tipo da mensagem para fazer o controle do que fazer (eleição, confirmacao da eleicao)
 	corpo [4]int // conteudo da mensagem para colocar os ids (usar um tamanho ocmpativel com o numero de processos no anel)
+	started int
 }
 
 var (
@@ -60,13 +61,10 @@ func ElectionStage(TaskId int, in chan mensagem, out chan mensagem, leader int) 
 
 	// variaveis locais que indicam se este processo é o lider e se esta ativo
 
-	// var actualLeader int
+	var actualLeader int
 	var bFailed bool = false // todos inciam sem falha
 
-	//actualLeader = leader // indicação do lider veio por parâmatro
-	var newLeader = -1
-	var voted = 0
-	var count = 0
+	actualLeader = leader // indicação do lider veio por parâmatro
 
 	temp := <-in // ler mensagem
 	fmt.Printf("%2d: recebi mensagem do tipo %d, [ %d, %d, %d, %d ]\n", TaskId, temp.tipo, temp.corpo[0], temp.corpo[1], temp.corpo[2], temp.corpo[3])
@@ -76,25 +74,28 @@ func ElectionStage(TaskId int, in chan mensagem, out chan mensagem, leader int) 
 		{
 			bFailed = true
 			fmt.Printf("%2d: falho %v \n", TaskId, bFailed)
-			controle <- -5
+			// controle <- -5
 
 			// vai pra eleição
 			temp.tipo = 0
-			temp.corpo[0] = -1
-			temp.corpo[1] = -1
-			temp.corpo[2] = -1
-			temp.corpo[3] = -1
+			temp.corpo = [4]int{-1, -1, -1, -1} // Reseta corpo da mensagem
 			out <- temp
 		}
 	case 0:
 		{
-
+			//se todos os processos votaram, chama o case 1
+			if temp.started == TaskId {
+				temp.tipo = 1
+				out <- temp
+				
+			}
 			// para cada processo no anel, se o processo não estiver falho, ele coloca seu TaskId no corpo da mensagem
 			// e envia a mensagem para o próximo processo no anel
 			if !bFailed {
 				fmt.Printf("%2d: votação\n", TaskId)
 				if temp.corpo[0] == -1 {
 					temp.corpo[0] = TaskId
+					temp.started = TaskId
 					} else if temp.corpo[1] == -1 {
 						temp.corpo[1] = TaskId
 						} else if temp.corpo[2] == -1 {
@@ -102,33 +103,24 @@ func ElectionStage(TaskId int, in chan mensagem, out chan mensagem, leader int) 
 						}
 						fmt.Printf("%2d: passando mensagem do tipo %d, [ %d, %d, %d, %d ]\n", TaskId, temp.tipo, temp.corpo[0], temp.corpo[1], temp.corpo[2], temp.corpo[3])
 					}
-					voted++
-
-			if count == 4{
-				temp.tipo = 1
-			}
-			out <- temp
-
+			out <- temp	
 
 		}
 	case 1:
 		{
 			fmt.Printf("%2d: Apuração dos votos\n", TaskId)
 
-			if count == 4{
-				break;
-			}
+			
 			// para cada processo no anel, se o processo for menor que o lider atual, ele atualiza o lider
 			for i := 0; i < 4; i++ {
 				if TaskId < temp.corpo[i] {
-					newLeader = TaskId
+					actualLeader = TaskId
 				}
-				count++
 				out <- temp
 			}
 
 			if temp.corpo[0] == TaskId {
-				fmt.Printf("%2d: novo lider é %d\n", TaskId, newLeader)
+				fmt.Printf("%2d: novo lider é %d\n", TaskId, actualLeader)
 			}
 		}
 
