@@ -90,6 +90,7 @@ func ElectionStage(TaskId int, in chan mensagem, out chan mensagem, leader int) 
                 temp.tipo = 0
                 temp.started = TaskId
                 temp.lider = TaskId
+                fmt.Printf("%2d: líder da eleição: %d\n", TaskId, temp.lider)
                 out <- temp
             }
         case 0:
