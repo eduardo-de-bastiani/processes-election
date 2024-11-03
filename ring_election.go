@@ -1,6 +1,3 @@
-// Código exemplo para o trabalho de sistemas distribuídos (eleição em anel)
-// By Cesar De Rose - 2022
-
 package main
 
 import (
@@ -9,10 +6,10 @@ import (
 )
 
 type mensagem struct {
-    tipo    int    // tipo da mensagem para fazer o controle do que fazer (eleição, confirmação da eleição)
-    corpo   [4]int // conteúdo da mensagem para colocar os ids (usar um tamanho compatível com o número de processos no anel)
-    lider   int
-    started int
+    tipo    int    // tipo da mensagem para fazer o controle do que fazer (falha, eleição, confirmação da eleição)
+    corpo   [4]int // conteúdo da mensagem para colocar os ids falhos
+    lider   int // processo lider da eleição
+    started int // processo que iniciou a eleição ou confirmação da eleição
 }
 
 var (
@@ -31,27 +28,23 @@ func ElectionControler(in chan int) {
 
     var temp mensagem
 
-    // comandos para o anel iniciam aqui
-
 	temp.corpo[0] = -1
 	temp.corpo[1] = -1
 	temp.corpo[2] = -1
 	temp.corpo[3] = -1
 
     // mudar o processo 0 - canal de entrada 3 - para falho (defini mensagem tipo 2 pra isto)
-
     temp.tipo = 2
     temp.corpo[0] = 0 // falha o processo 0
-    chans[0] <- temp	//manda para o 1
+    chans[0] <- temp	//manda para o 1 (próximo processo no anel)
     fmt.Printf("Controle: mudar o processo 0 para falho\n")
 	
     fmt.Printf("Controle: confirmação %d\n", <-in) // receber e imprimir confirmação
 
     // mudar o processo 1 - canal de entrada 0 - para falho (defini mensagem tipo 2 pra isto)
-
     temp.tipo = 2
-	temp.corpo[1] = 1 
-    chans[1] <- temp //manda para o 2
+	temp.corpo[1] = 1 // falha o processo 1
+    chans[1] <- temp //manda para o 2 (próximo processo no anel)
     fmt.Printf("Controle: mudar o processo 1 para falho\n")
     fmt.Printf("Controle: confirmação %d\n", <-in) // receber e imprimir confirmação
 
@@ -62,14 +55,10 @@ func ElectionControler(in chan int) {
 func ElectionStage(TaskId int, in chan mensagem, out chan mensagem, leader int) {
     defer wg.Done()
 
-    // variáveis locais que indicam se este processo é o líder e se está ativo
-
-
     var FailedId1 int
     var FailedId2 int
     var FailedId3 int
     var FailedId4 int
-
 
     for {
         temp := <-in // ler mensagem
@@ -95,13 +84,13 @@ func ElectionStage(TaskId int, in chan mensagem, out chan mensagem, leader int) 
             }
         case 0:
             {
-                // se todos os processos votaram, chama o case 1
+                // se o processo está falho, apenas repassa a msg
                 if TaskId == FailedId1 || TaskId == FailedId2 || TaskId == FailedId3 || TaskId == FailedId4 {
                     fmt.Printf("%2d: processo falho, repassando mensagem...\n", TaskId)
                     out <- temp
                     break
                 }
-
+                // se a msg chega no processo que iniciou a eleição, chamamos a confirmação
                 if TaskId == temp.started {
                     fmt.Printf("%2d: encerrando votação\n", TaskId)
                     fmt.Printf("%2d: novo líder é %d\n", TaskId, temp.lider)
@@ -109,7 +98,7 @@ func ElectionStage(TaskId int, in chan mensagem, out chan mensagem, leader int) 
                     out <- temp
                     break
                 }
-
+                // votação
                 if TaskId != temp.started {
                     fmt.Printf("%2d: votação\n", TaskId)
                     temp.tipo = 0
@@ -125,18 +114,19 @@ func ElectionStage(TaskId int, in chan mensagem, out chan mensagem, leader int) 
             }
         case 1:
             {
-
+                // se o processo está falho, apenas repassa a msg
                 if TaskId == FailedId1 || TaskId == FailedId2 || TaskId == FailedId3 || TaskId == FailedId4 {
                     fmt.Printf("%2d: processo falho, repassando mensagem...\n", TaskId)
                     out <- temp
                     break
                 }
+                // se a msg chega no processo que iniciou a confirmação, encerramos a eleição
                 if TaskId == temp.started {
                     fmt.Printf("%2d: encerrando eleição\n", TaskId)
                     controle <- -5
                     break
                 }
-
+                // atualização de lider para cada processo
                 if TaskId != temp.started {
                     fmt.Printf("%2d: atualizando meu líder para %d\n", TaskId, temp.lider)
                     temp.tipo = 1
